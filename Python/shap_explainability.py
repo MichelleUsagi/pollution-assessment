@@ -37,12 +37,13 @@ explainer = shap.TreeExplainer(model)
 logging.info("SHAP TreeExplainer initialized.")
 
 #Compute SHAP values
-# For classification, SHAP returns values for each class.
-# We focus on class 1 (unhealthy air).
 shap_values = explainer.shap_values(X_test)
-# For binary classification:
-# shap_values[1] corresponds to the positive class.
-shap_values_positive = shap_values[1]
+
+# Simple fix
+if isinstance(shap_values, list):
+    shap_values_positive = shap_values[1]
+else:
+    shap_values_positive = shap_values
 logging.info("SHAP values computed.")
 
 #Global interpretation
@@ -67,18 +68,37 @@ plt.close()
 
 #Feature interaction insight
 #Dependence plot
-# Choose most important feature automatically
+# Ensure shap_values_positive is 2D
+if len(shap_values_positive.shape) == 3:
+    shap_values_positive = shap_values_positive[:, :, 1]
+
+# Ensure X_test is a DataFrame with correct columns
+if not isinstance(X_test, pd.DataFrame):
+    X_test = pd.DataFrame(X_test, columns=feature_names)
+
+# Align shapes strictly
+assert shap_values_positive.shape[0] == X_test.shape[0], "Row mismatch!"
+assert shap_values_positive.shape[1] == X_test.shape[1], "Column mismatch!"
+
+# Get most important feature
 mean_abs_shap = np.abs(shap_values_positive).mean(axis=0)
 top_feature_index = np.argmax(mean_abs_shap)
-top_feature_name = x.columns[top_feature_index]
-logging.info(f"Generating dependence plot for: {top_feature_name}")
-plt.figure()
-shap.dependence_plot(top_feature_name,
-                     shap_values_positive,
-                     X_test,show=False)
+top_feature_name = X_test.columns[top_feature_index]
+
+# Plot dependence
+shap.dependence_plot(
+    top_feature_name,
+    shap_values_positive,
+    X_test,
+    interaction_index=None,
+    show=False
+)
+
 plt.tight_layout()
-plt.savefig(Save_path + "shap_dependence_plot.png", dpi=300, bbox_inches="tight")
+plt.savefig("shap_dependence_plot.png")
 plt.close()
+
+print("SHAP dependence plot saved successfully.")
 
 #Local explanation
 #Forceplot
@@ -88,7 +108,7 @@ logging.info("Generating local force plot")
 shap.initjs()
 force_plot = shap.force_plot(explainer.expected_value[1],
                              shap_values_positive[sample_index],
-                             x_test.iloc[sample_index])
+                             X_test.iloc[sample_index])
 
 # If running in VSCode, save as HTML
 shap.save_html(Save_path + "shap_force_plot.html", force_plot)
